@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Barcode Scanner</title>
+  <!-- ZXing 라이브러리 임포트 방식 수정 -->
+  <script src="https://unpkg.com/@zxing/library@0.20.0"></script>
+  <script src="https://unpkg.com/@zxing/browser@0.1.1"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    #video-container {
+      width: 100%;
+      max-width: 500px;
+      margin-top: 20px;
+    }
+    #video {
+      width: 100%;
+    }
+    button {
+      margin: 10px;
+      padding: 10px 20px;
+      background-color: #3498db;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #result {
+      margin-top: 20px;
+      padding: 10px;
+      border: 1px solid #ccc;
+      width: 90%;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <h2>Barcode Scanner</h2>
+  <div id="video-container">
+    <video id="video" playsinline autoplay></video>
+  </div>
+  <button id="start-button">Start Camera</button>
+  <button id="capture-button" disabled>Capture & Scan</button>
+  <div id="result">Result will appear here</div>
+  
+  <canvas id="canvas" style="display:none;"></canvas>
+  
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const video = document.getElementById('video');
+      const canvas = document.getElementById('canvas');
+      const resultDiv = document.getElementById('result');
+      const startButton = document.getElementById('start-button');
+      const captureButton = document.getElementById('capture-button');
+      let stream = null;
+      
+      // ZXing 객체 접근 방식 수정
+      const codeReader = new ZXing.BrowserMultiFormatReader();
+      
+      startButton.addEventListener('click', async function() {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: 'environment' } },
+            audio: false
+          });
+          video.srcObject = stream;
+          captureButton.disabled = false;
+          startButton.disabled = true;
+        } catch (err) {
+          console.error('Error accessing camera:', err);
+          resultDiv.innerText = 'Error accessing camera: ' + err.message;
+        }
+      });
+      
+      captureButton.addEventListener('click', function() {
+        if (!stream) return;
+        
+        // 캔버스에 현재 비디오 프레임 그리기
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const context = canvas.getContext('2d');
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        // 이미지 데이터를 URL로 변환
+        const imageUrl = canvas.toDataURL('image/png');
+        
+        try {
+          // 수정된 바코드 스캔 방식
+          const img = new Image();
+          img.src = imageUrl;
+          img.onload = function() {
+            codeReader.decodeFromImage(img)
+              .then(result => {
+                resultDiv.innerText = 'Barcode: ' + result.text;
+                
+                // 부모 창에 메시지 전송
+                if (window.parent && window.parent !== window) {
+                  window.parent.postMessage({
+                    type: 'barcode-scanned',
+                    value: result.text,
+                    format: result.format
+                  }, '*');
+                }
+              })
+              .catch(err => {
+                resultDiv.innerText = 'No barcode found. Try again.';
+                console.error('Barcode scan error:', err);
+              });
+          };
+        } catch (err) {
+          resultDiv.innerText = 'Error analyzing image: ' + err.message;
+          console.error('Error:', err);
+        }
+      });
+      
+      // 페이지 언로드 시 정리
+      window.addEventListener('beforeunload', function() {
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+        }
+      });
+    });
+  </script>
+</body>
+</html>
